@@ -1,9 +1,21 @@
 import os
+import json
 from fastapi import FastAPI, Request
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram import (
+    Update, 
+    ReplyKeyboardMarkup
+)
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    ContextTypes,
+    ConversationHandler,
+    MessageHandler,
+    filters
+)
 
 TOKEN = os.getenv("BOT_TOKEN")
+RATE, LVV, TRUCK, TRASH = range(4)
 
 app = FastAPI()
 
@@ -11,10 +23,14 @@ telegram_app = Application.builder().token(TOKEN).build()
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Привет, чмоня! Я твой новый телеграм-бот.")
+    await update.message.reply_text(
+        "Привет, чмоня! Я твой новый телеграм-бот."
+        )
 
 
-telegram_app.add_handler(CommandHandler("start", start))
+telegram_app.add_handler(
+    CommandHandler("start", start)
+    )
 
 
 @app.on_event("startup")
