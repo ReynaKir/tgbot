@@ -149,14 +149,21 @@ conv_handler = ConversationHandler(
     entry_points=[
         CommandHandler("start", start)
     ],
-
     states={
-    RATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_rate)],
-    LVV: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_lvv)],
-    TRUCK: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_truck)],
-    TRASH: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_trash)],
-}
-
+        RATE: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, get_rate)
+        ],
+        LVV: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, get_lvv)
+        ],
+        TRUCK: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, get_truck)
+        ],
+        TRASH: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, get_trash)
+        ]
+    },
+    fallbacks=[]
 )
 
 
