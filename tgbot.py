@@ -86,6 +86,64 @@ async def get_rate(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return LVV
 
+async def get_lvv(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.lower()
+
+    if text not in ["да", "нет"]:
+        await update.message.reply_text("Ответьте: Да или Нет")
+        return LVV
+
+    context.user_data["lvv"] = (text == "да")
+
+    keyboard = [["Да", "Нет"]]
+
+    await update.message.reply_text(
+        "Разгружаете машину?",
+        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    )
+
+    return TRUCK
+
+async def get_truck(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.lower()
+
+    if text not in ["да", "нет"]:
+        await update.message.reply_text("Ответьте: Да или Нет")
+        return TRUCK
+
+    context.user_data["truck"] = (text == "да")
+
+    keyboard = [["Да", "Нет"]]
+
+    await update.message.reply_text(
+        "Сдаёте мусор?",
+        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    )
+
+    return TRASH
+
+async def get_trash(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.lower()
+
+    if text not in ["да", "нет"]:
+        await update.message.reply_text("Ответьте: Да или Нет")
+        return TRASH
+
+    user_id = str(update.effective_user.id)
+    users = load_users()
+
+    users[user_id] = {
+        "rate": context.user_data["rate"],
+        "lvv": context.user_data["lvv"],
+        "truck": context.user_data["truck"],
+        "trash": (text == "да"),
+        "shifts": []
+    }
+
+    save_users(users)
+
+    await update.message.reply_text("Регистрация завершена ✅")
+    return ConversationHandler.END
 
 conv_handler = ConversationHandler(
     entry_points=[
@@ -93,15 +151,12 @@ conv_handler = ConversationHandler(
     ],
 
     states={
-        RATE: [
-            MessageHandler(
-                filters.TEXT & ~filters.COMMAND,
-                get_rate
-            )
-        ]
-    },
+    RATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_rate)],
+    LVV: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_lvv)],
+    TRUCK: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_truck)],
+    TRASH: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_trash)],
+}
 
-    fallbacks=[]
 )
 
 
