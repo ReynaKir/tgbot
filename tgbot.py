@@ -15,7 +15,7 @@ from telegram.ext import (
 )
 
 TOKEN = os.getenv("BOT_TOKEN")
-RATE, LVV, TRUCK, TRASH = range(4)
+RATE, LVV, TRUCK, TRASH, SHIFT_DATE, SHIFT_START, SHIFT_END, SHIFT_BREAK = range(8)
 
 app = FastAPI()
 
@@ -145,6 +145,103 @@ async def get_trash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Регистрация завершена ✅")
     return ConversationHandler.END
 
+async def add_shift(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+
+    users = load_users()
+
+    if user_id not in users:
+        await update.message.reply_text(
+            "Сначала пройдите регистрацию через /start"
+        )
+        return ConversationHandler.END
+
+    await update.message.reply_text(
+        "Введите дату смены (например: 07.06.2026)"
+    )
+
+    return SHIFT_DATE
+
+async def get_shift_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    date = update.message.text
+
+    context.user_data["shift_date"] = date
+
+    await update.message.reply_text(
+        "Введите время начала смены (например: 08:57)"
+    )
+
+    return SHIFT_START
+
+async def get_shift_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    start_time = update.message.text
+
+    context.user_data["shift_start"] = start_time
+
+    await update.message.reply_text(
+        "Введите время окончания смены (например: 17:49)"
+    )
+
+    return SHIFT_END
+
+async def get_shift_end(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    end_time = update.message.text
+
+    context.user_data["shift_end"] = end_time
+
+    keyboard = [
+        ["0 пятнашек"],
+        ["1 пятнашка"],
+        ["2 пятнашки"]
+    ]
+
+    await update.message.reply_text(
+        "Сколько пятнашек было за смену?",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard,
+            resize_keyboard=True
+        )
+    )
+
+    return SHIFT_BREAK
+
+async def get_shift_break(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+
+    if text not in ["0 пятнашек", "1 пятнашка", "2 пятнашки"]:
+        await update.message.reply_text(
+            "Выберите вариант кнопкой."
+        )
+        return SHIFT_BREAK
+
+    if text == "0 пятнашек":
+        breaks = 0
+    elif text == "1 пятнашка":
+        breaks = 1
+    else:
+        breaks = 2
+
+    user_id = str(update.effective_user.id)
+
+    users = load_users()
+
+    shift = {
+        "date": context.user_data["shift_date"],
+        "start": context.user_data["shift_start"],
+        "end": context.user_data["shift_end"],
+        "breaks": breaks
+    }
+
+    users[user_id]["shifts"].append(shift)
+
+    save_users(users)
+
+    await update.message.reply_text(
+        "Смена сохранена ✅"
+    )
+
+    return ConversationHandler.END
+
 conv_handler = ConversationHandler(
     entry_points=[
         CommandHandler("start", start)
@@ -161,13 +258,75 @@ conv_handler = ConversationHandler(
         ],
         TRASH: [
             MessageHandler(filters.TEXT & ~filters.COMMAND, get_trash)
-        ]
+        ],
+        SHIFT_DATE: [
+            MessageHandler(
+                filters.TEXT & ~filters.COMMAND,
+                get_shift_date
+            )
+        ],
+        SHIFT_START: [
+            MessageHandler(
+                filters.TEXT & ~filters.COMMAND,
+                get_shift_start
+            )
+        ],
+        SHIFT_END: [
+    MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        get_shift_end
+            )
+        ],
+        SHIFT_BREAK: [
+    MessageHandler(
+        filters.TEXT & ~filters.COMMAND,
+        get_shift_break
+            )
+        ],
     },
     fallbacks=[]
 )
 
+shift_handler = ConversationHandler(
+    entry_points=[
+        CommandHandler("addshift", add_shift)
+    ],
+
+    states={
+        SHIFT_DATE: [
+            MessageHandler(
+                filters.TEXT & ~filters.COMMAND,
+                get_shift_date
+            )
+        ],
+
+        SHIFT_START: [
+            MessageHandler(
+                filters.TEXT & ~filters.COMMAND,
+                get_shift_start
+            )
+        ],
+
+        SHIFT_END: [
+            MessageHandler(
+                filters.TEXT & ~filters.COMMAND,
+                get_shift_end
+            )
+        ],
+
+        SHIFT_BREAK: [
+            MessageHandler(
+                filters.TEXT & ~filters.COMMAND,
+                get_shift_break
+            )
+        ]
+    },
+
+    fallbacks=[]
+)
 
 telegram_app.add_handler(conv_handler)
+telegram_app.add_handler(shift_handler)
 
 @app.on_event("startup")
 async def on_startup():
