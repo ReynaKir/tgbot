@@ -3,7 +3,8 @@ import json
 from fastapi import FastAPI, Request
 from telegram import (
     Update, 
-    ReplyKeyboardMarkup
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove
 )
 from telegram.ext import (
     Application,
@@ -15,7 +16,18 @@ from telegram.ext import (
 )
 
 TOKEN = os.getenv("BOT_TOKEN")
-RATE, LVV, TRUCK, TRASH, SHIFT_DATE, SHIFT_START, SHIFT_END, SHIFT_BREAK = range(8)
+(
+    RATE,
+    LVV,
+    TRUCK,
+    TRASH,
+    SHIFT_DATE,
+    SHIFT_START,
+    SHIFT_END,
+    SHIFT_BREAK,
+    SHIFT_TRUCK,
+    SHIFT_TRASH
+) = range(10)
 
 app = FastAPI()
 
@@ -142,7 +154,13 @@ async def get_trash(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     save_users(users)
 
-    await update.message.reply_text("Регистрация завершена ✅")
+    context.user_data.clear()
+
+    await update.message.reply_text(
+        "Регистрация завершена ✅",
+        reply_markup=ReplyKeyboardRemove()
+    )
+
     return ConversationHandler.END
 
 async def add_shift(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -221,23 +239,127 @@ async def get_shift_break(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         breaks = 2
 
+    context.user_data["shift_breaks"] = breaks
+
+    user_id = str(update.effective_user.id)
+    users = load_users()
+    user = users[user_id]
+
+    if user.get("truck", False):
+        keyboard = [["Да", "Нет"]]
+
+        await update.message.reply_text(
+            "Была разгрузка машины за эту смену?",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard,
+                resize_keyboard=True
+            )
+        )
+
+        return SHIFT_TRUCK
+
+    context.user_data["truck_done"] = False
+
+    if user.get("trash", False):
+        keyboard = [["Да", "Нет"]]
+
+        await update.message.reply_text(
+            "Была сдача мусора за эту смену?",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard,
+                resize_keyboard=True
+            )
+        )
+
+        return SHIFT_TRASH
+
+    context.user_data["trash_done"] = False
+
+    return await save_shift(update, context)
+
+async def get_shift_truck(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.lower()
+
+    if text not in ["да", "нет"]:
+        await update.message.reply_text("Ответьте: Да или Нет")
+        return SHIFT_TRUCK
+
+    context.user_data["truck_done"] = (text == "да")
+
+    user_id = str(update.effective_user.id)
+    users = load_users()
+    user = users[user_id]
+
+    if user.get("trash", False):
+        keyboard = [["Да", "Нет"]]
+
+        await update.message.reply_text(
+            "Была сдача мусора за эту смену?",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard,
+                resize_keyboard=True
+            )
+        )
+
+        return SHIFT_TRASH
+
+    context.user_data["trash_done"] = False
+
+    return await save_shift(update, context)
+
+
+async def get_shift_trash(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.lower()
+
+    if text not in ["да", "нет"]:
+        await update.message.reply_text("Ответьте: Да или Нет")
+        return SHIFT_TRASH
+
+    context.user_data["trash_done"] = (text == "да")
+
+    return await save_shift(update, context)
+
+
+async def save_shift(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = str(update.effective_user.id)
 
     users = load_users()
+    user = users[user_id]
 
     shift = {
         "date": context.user_data["shift_date"],
         "start": context.user_data["shift_start"],
         "end": context.user_data["shift_end"],
-        "breaks": breaks
+        "breaks": context.user_data["shift_breaks"],
+
+        # Сохраняем ставку на момент смены.
+        # Потом, если пользователь поменяет ставку,
+        # старые смены не испортятся.
+        "rate": user["rate"],
+
+        "truck_done": context.user_data.get("truck_done", False),
+        "trash_done": context.user_data.get("trash_done", False)
     }
 
     users[user_id]["shifts"].append(shift)
 
     save_users(users)
 
+    context.user_data.clear()
+
+    text = (
+        "Смена сохранена ✅\n\n"
+        f"Дата: {shift['date']}\n"
+        f"Начало: {shift['start']}\n"
+        f"Конец: {shift['end']}\n"
+        f"Пятнашек: {shift['breaks']}\n"
+        f"Разгрузка машины: {'Да' if shift['truck_done'] else 'Нет'}\n"
+        f"Сдача мусора: {'Да' if shift['trash_done'] else 'Нет'}"
+    )
+
     await update.message.reply_text(
-        "Смена сохранена ✅"
+        text,
+        reply_markup=ReplyKeyboardRemove()
     )
 
     return ConversationHandler.END
@@ -258,30 +380,6 @@ conv_handler = ConversationHandler(
         ],
         TRASH: [
             MessageHandler(filters.TEXT & ~filters.COMMAND, get_trash)
-        ],
-        SHIFT_DATE: [
-            MessageHandler(
-                filters.TEXT & ~filters.COMMAND,
-                get_shift_date
-            )
-        ],
-        SHIFT_START: [
-            MessageHandler(
-                filters.TEXT & ~filters.COMMAND,
-                get_shift_start
-            )
-        ],
-        SHIFT_END: [
-    MessageHandler(
-        filters.TEXT & ~filters.COMMAND,
-        get_shift_end
-            )
-        ],
-        SHIFT_BREAK: [
-    MessageHandler(
-        filters.TEXT & ~filters.COMMAND,
-        get_shift_break
-            )
         ],
     },
     fallbacks=[]
@@ -319,7 +417,21 @@ shift_handler = ConversationHandler(
                 filters.TEXT & ~filters.COMMAND,
                 get_shift_break
             )
-        ]
+        ],
+
+        SHIFT_TRUCK: [
+            MessageHandler(
+                filters.TEXT & ~filters.COMMAND,
+                get_shift_truck
+            )
+        ],
+
+        SHIFT_TRASH: [
+            MessageHandler(
+                filters.TEXT & ~filters.COMMAND,
+                get_shift_trash
+            )
+        ],
     },
 
     fallbacks=[]
